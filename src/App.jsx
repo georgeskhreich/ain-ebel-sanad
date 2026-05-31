@@ -14,6 +14,7 @@ import {
   setDoc, 
   addDoc, 
   updateDoc, 
+  deleteDoc, /* تم إضافة دالة الحذف */
   onSnapshot 
 } from 'firebase/firestore';
 
@@ -22,7 +23,7 @@ import {
 // ==========================================
 // ⚠️ ضع مفاتيح مشروعك هنا قبل الحفظ في GitHub ⚠️
 const firebaseConfig = {
-   apiKey: "AIzaSyB2E40ctcxOEtKbURfxDlvUluNfnZuukRo",
+  apiKey: "AIzaSyB2E40ctcxOEtKbURfxDlvUluNfnZuukRo",
   authDomain: "ain-ebel-sanad.firebaseapp.com",
   projectId: "ain-ebel-sanad",
   storageBucket: "ain-ebel-sanad.firebasestorage.app",
@@ -69,8 +70,9 @@ const SEED_SURVEYS = [
 ];
 
 const SEED_USERS = [
-  { name: "م. أحمد الشامي", username: "engineer", password: "123", role: "Field_Engineer", createdAt: "2026-05-28" },
-  { name: "لجنة البلدية (المشرف العام)", username: "supervisor", password: "123", role: "Supervisor", createdAt: "2026-05-28" }
+  { name: "المدير العام (Admin)", username: "admin", password: "123", role: "Admin", createdAt: "2026-05-28" },
+  { name: "لجنة البلدية (المشرف العام)", username: "supervisor", password: "123", role: "Supervisor", createdAt: "2026-05-28" },
+  { name: "م. أحمد الشامي", username: "engineer", password: "123", role: "Field_Engineer", createdAt: "2026-05-28" }
 ];
 
 export default function App() {
@@ -84,7 +86,7 @@ export default function App() {
   const [drafts, setDrafts] = useState([]);
   const [usersList, setUsersList] = useState([]);
 
-  // نموذج إنشاء مستخدم جديد (محدث لدعم اختيار الدور)
+  // نموذج إنشاء مستخدم جديد 
   const [newEngineerForm, setNewEngineerForm] = useState({
     name: "", username: "", password: "", role: "Field_Engineer"
   });
@@ -176,7 +178,7 @@ export default function App() {
           setFormData(prev => ({
             ...prev, gps: { lat: parseFloat(pos.coords.latitude.toFixed(6)), lng: parseFloat(pos.coords.longitude.toFixed(6)), address: `إحداثيات حية: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}` }
           }));
-        }, () => {} // صامت لتجنب إزعاج المستخدم
+        }, () => {} 
       );
     }
   }, [wizardStep]);
@@ -266,26 +268,36 @@ export default function App() {
   const stopRecording = () => { if (mediaRecorderRef.current && isRecording) { mediaRecorderRef.current.stop(); setIsRecording(false); } };
   const deleteAudioNote = () => { setFormData(prev => ({ ...prev, audioNote: null })); showToast("تم حذف التسجيل."); };
 
+  // ==========================================
+  // تسجيل الدخول مع الحسابات الثلاثة
+  // ==========================================
   const handleLogin = (e) => {
     e.preventDefault();
     const { username, password } = loginForm;
     const matchingUser = usersList.find(u => u.username.toLowerCase() === username.trim().toLowerCase() && u.password === password);
+    
     if (matchingUser) {
       setCurrentUser({ username: matchingUser.username, role: matchingUser.role, name: matchingUser.name });
-      setCurrentTab(matchingUser.role === "Supervisor" ? "supervisor-dashboard" : "field-new");
+      setCurrentTab(matchingUser.role === "Field_Engineer" ? "field-new" : "supervisor-dashboard");
       setAuthError(""); showToast(`مرحباً بك ${matchingUser.name}.`);
-    } else if (username === "engineer" && password === "123") {
-      setCurrentUser({ username: "engineer", role: "Field_Engineer", name: "م. أحمد الشامي" });
-      setCurrentTab("field-new"); setAuthError(""); showToast("مرحباً بك.");
+    } else if (username === "admin" && password === "123") {
+      setCurrentUser({ username: "admin", role: "Admin", name: "المدير العام (Admin)" });
+      setCurrentTab("supervisor-dashboard"); setAuthError(""); showToast("مرحباً بك، سيادة المدير.");
     } else if (username === "supervisor" && password === "123") {
       setCurrentUser({ username: "supervisor", role: "Supervisor", name: "لجنة البلدية (المشرف العام)" });
       setCurrentTab("supervisor-dashboard"); setAuthError(""); showToast("مرحباً سيادة المشرف.");
+    } else if (username === "engineer" && password === "123") {
+      setCurrentUser({ username: "engineer", role: "Field_Engineer", name: "م. أحمد الشامي" });
+      setCurrentTab("field-new"); setAuthError(""); showToast("مرحباً بك.");
     } else {
       setAuthError("البيانات غير صحيحة.");
     }
   };
   const handleLogout = () => { setCurrentUser(null); setLoginForm({ username: "", password: "" }); };
 
+  // ==========================================
+  // الإدارة: إنشاء، تغيير سر، وحذف المستخدمين
+  // ==========================================
   const handleCreateNewUser = async (e) => {
     e.preventDefault();
     if (!db) { showToast("قاعدة البيانات غير متصلة"); return; }
@@ -294,7 +306,7 @@ export default function App() {
     if (usersList.some(u => u.username.toLowerCase() === username.trim().toLowerCase())) { showToast("اسم المستخدم محجوز!"); return; }
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'users'), { name: name.trim(), username: username.trim().toLowerCase(), password: password.trim(), role: role, createdAt: new Date().toISOString().substring(0, 10) });
-      showToast(`تم إنشاء حساب (${role === 'Supervisor' ? 'مشرف' : 'مهندس'}) بنجاح!`);
+      showToast(`تم إنشاء الحساب بنجاح!`);
       setNewEngineerForm({ name: "", username: "", password: "", role: "Field_Engineer" });
     } catch (err) { showToast("حدث خطأ."); }
   };
@@ -306,6 +318,17 @@ export default function App() {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'users', editingUser.id), { password: editingUser.newPassword.trim() });
       showToast("تم تغيير كلمة المرور بنجاح."); setEditingUser(null);
     } catch (err) { showToast("فشل التحديث."); }
+  };
+
+  const handleDeleteUser = async (id, role) => {
+    if (!db || currentUser?.role !== "Admin") return;
+    if (role === "Admin" && usersList.filter(u => u.role === "Admin").length <= 1) {
+        showToast("لا يمكنك حذف حساب الإدارة الوحيد في النظام!"); return;
+    }
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'users', id));
+      showToast("تم حذف الحساب نهائياً.");
+    } catch (e) { showToast("فشل حذف المستخدم."); }
   };
 
   const togglePasswordVisibility = (id) => {
@@ -345,7 +368,7 @@ export default function App() {
     setWizardStep(1);
     setFormData(initialFormData);
     setHasSignature(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' }); // الصعود لأعلى الشاشة للملف الجديد
+    window.scrollTo({ top: 0, behavior: 'smooth' }); 
   };
 
   const handleSyncDrafts = async () => {
@@ -356,11 +379,22 @@ export default function App() {
     } catch (e) { showToast("فشلت المزامنة."); }
   };
 
+  // ==========================================
+  // الإدارة: اعتماد، رفض، وحذف التقارير
+  // ==========================================
   const handleApproveReport = async (id) => {
     if (!db) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'surveys', id), { status: "معتمد" }); setSelectedSurvey(prev => ({...prev, status:"معتمد"})); showToast("تم اعتماد التقرير."); } catch (e) { showToast("فشل التحديث."); }
   };
   const handleRejectReport = async (id) => {
     if (!db) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'surveys', id), { status: "مرفوض - يتطلب إعادة مسح" }); setSelectedSurvey(prev => ({...prev, status:"مرفوض - يتطلب إعادة مسح"})); showToast("تم رفض التقرير."); } catch (e) { showToast("فشل التحديث."); }
+  };
+  const handleDeleteReport = async (id) => {
+    if (!db || currentUser?.role !== "Admin") return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'surveys', id));
+      if (selectedSurvey?.id === id) setSelectedSurvey(null);
+      showToast("تم حذف التقرير نهائياً من النظام.");
+    } catch (e) { showToast("فشل حذف التقرير."); }
   };
 
   const filteredSurveys = surveys.filter(s => {
@@ -398,7 +432,7 @@ export default function App() {
             {currentUser && (
               <div className="bg-teal-800 px-3 py-1.5 rounded-lg border border-teal-700 text-teal-100 flex items-center">
                 <span className="font-semibold text-white ml-1.5">{currentUser.name}</span>
-                <span className="text-[10px] bg-teal-700 text-teal-100 px-1.5 py-0.5 rounded mr-1.5">{currentUser.role === "Supervisor" ? "مشرف" : "ميداني"}</span>
+                <span className="text-[10px] bg-teal-700 text-teal-100 px-1.5 py-0.5 rounded mr-1.5">{currentUser.role === "Admin" ? "مدير نظام" : currentUser.role === "Supervisor" ? "مشرف" : "ميداني"}</span>
                 <button onClick={handleLogout} className="mr-3 text-red-300 hover:text-white font-bold text-xs">خروج</button>
               </div>
             )}
@@ -412,7 +446,7 @@ export default function App() {
             <div className="bg-gradient-to-r from-teal-800 to-teal-900 p-6 text-center text-white">
               <div className="bg-white text-teal-900 w-16 h-16 rounded-2xl mx-auto flex items-center justify-center font-black text-2xl shadow-md mb-3">ع</div>
               <h2 className="text-xl font-bold">بوابة بلدية عين إبل السحابية</h2>
-              <p className="text-xs text-teal-200 mt-1">تسجيل الدخول للمهندسين والمشرفين</p>
+              <p className="text-xs text-teal-200 mt-1">تسجيل الدخول للمهندسين والمشرفين والإدارة</p>
             </div>
             <form onSubmit={handleLogin} className="p-6 space-y-4">
               {authError && <div className="bg-red-50 border-r-4 border-red-500 text-red-800 p-3 rounded-lg text-xs">{authError}</div>}
@@ -428,7 +462,7 @@ export default function App() {
               <div className="border-b border-slate-100 pb-3">
                 <span className="text-[10px] uppercase font-bold text-slate-400">الصفحة النشطة</span>
                 <h3 className="font-bold text-slate-800 text-sm">{currentUser.name}</h3>
-                <p className="text-xs text-slate-500">{currentUser.role === "Supervisor" ? "إدارة التقارير والتعويضات" : "مسح ميداني - عين إبل"}</p>
+                <p className="text-xs text-slate-500">{currentUser.role === "Admin" ? "إدارة النظام كاملة" : currentUser.role === "Supervisor" ? "إدارة التقارير والتعويضات" : "مسح ميداني - عين إبل"}</p>
               </div>
               <nav className="space-y-1">
                 {currentUser.role === "Field_Engineer" && (
@@ -440,14 +474,14 @@ export default function App() {
                     </button>
                   </>
                 )}
-                {currentUser.role === "Supervisor" && (
-                  <>
-                    <button onClick={() => setCurrentTab("supervisor-dashboard")} className={`w-full flex items-center space-x-3 space-x-reverse px-4 py-3 rounded-xl font-bold text-xs ${currentTab === "supervisor-dashboard" ? "bg-teal-50 text-teal-700" : "text-slate-600 hover:bg-slate-50"}`}><span>لوحة تحكم البلدية</span></button>
-                    <button onClick={() => setCurrentTab("supervisor-users")} className={`w-full flex items-center space-x-3 space-x-reverse px-4 py-3 rounded-xl font-bold text-xs ${currentTab === "supervisor-users" ? "bg-teal-50 text-teal-700" : "text-slate-600 hover:bg-slate-50"}`}><span>👤 إدارة حسابات المهندسين</span></button>
-                  </>
+                {(currentUser.role === "Supervisor" || currentUser.role === "Admin") && (
+                  <button onClick={() => setCurrentTab("supervisor-dashboard")} className={`w-full flex items-center space-x-3 space-x-reverse px-4 py-3 rounded-xl font-bold text-xs ${currentTab === "supervisor-dashboard" ? "bg-teal-50 text-teal-700" : "text-slate-600 hover:bg-slate-50"}`}><span>لوحة تحكم التقارير</span></button>
+                )}
+                {currentUser.role === "Admin" && (
+                  <button onClick={() => setCurrentTab("supervisor-users")} className={`w-full flex items-center space-x-3 space-x-reverse px-4 py-3 rounded-xl font-bold text-xs ${currentTab === "supervisor-users" ? "bg-teal-50 text-teal-700" : "text-slate-600 hover:bg-slate-50"}`}><span>👤 إدارة حسابات النظام والمستخدمين</span></button>
                 )}
               </nav>
-              {currentUser.role === "Supervisor" && (
+              {currentUser.role === "Admin" && (
                 <div className="pt-2 border-t border-slate-100">
                   <button onClick={handleSeedDatabase} className="w-full py-2 bg-teal-900 text-white font-bold rounded-xl text-xs hover:bg-teal-800">تهيئة استمارات عين إبل أونلاين</button>
                 </div>
@@ -680,9 +714,9 @@ export default function App() {
               )}
 
               {/* شاشة لوحة المشرف */}
-              {currentUser.role === "Supervisor" && currentTab === "supervisor-dashboard" && (
+              {(currentUser.role === "Supervisor" || currentUser.role === "Admin") && currentTab === "supervisor-dashboard" && (
                 <div className="flex-1 flex flex-col p-6">
-                  <h2 className="text-lg font-bold mb-4">لوحة المشرف وإدارة التراخيص والتعويضات</h2>
+                  <h2 className="text-lg font-bold mb-4">لوحة إدارة التراخيص والتعويضات السحابية</h2>
                   <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1">
                     <div className="xl:col-span-5 space-y-4">
                       <input type="text" placeholder="ابحث باسم المالك أو المهندس..." className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
@@ -702,7 +736,14 @@ export default function App() {
                         <div className="space-y-4">
                           <div className="flex justify-between bg-white p-3 rounded-xl border items-center">
                             <span className="text-xs font-bold">{selectedSurvey.status}</span>
-                            <div className="space-x-2 space-x-reverse"><button onClick={()=>handleApproveReport(selectedSurvey.id)} className="bg-teal-600 text-white px-3 py-1.5 rounded text-[10px] font-bold">اعتماد</button><button onClick={()=>handleRejectReport(selectedSurvey.id)} className="bg-red-100 text-red-700 px-3 py-1.5 rounded text-[10px] font-bold">رفض</button></div>
+                            <div className="flex space-x-2 space-x-reverse">
+                              <button onClick={()=>handleApproveReport(selectedSurvey.id)} className="bg-teal-600 text-white px-3 py-1.5 rounded text-[10px] font-bold">اعتماد</button>
+                              <button onClick={()=>handleRejectReport(selectedSurvey.id)} className="bg-red-100 text-red-700 px-3 py-1.5 rounded text-[10px] font-bold">رفض</button>
+                              {/* زر الحذف النهائي يظهر للمدير فقط */}
+                              {currentUser.role === "Admin" && (
+                                <button onClick={()=>handleDeleteReport(selectedSurvey.id)} className="bg-slate-800 text-white px-3 py-1.5 rounded text-[10px] font-bold mr-4">حذف التقرير نهائياً 🗑️</button>
+                              )}
+                            </div>
                           </div>
                           
                           <div id="printable-report" className="bg-white p-6 rounded-2xl shadow border space-y-4 text-xs font-sans">
@@ -736,10 +777,10 @@ export default function App() {
                 </div>
               )}
 
-              {/* شاشة إدارة الحسابات (إضافة اختيار الدور ورؤية كلمة المرور) */}
-              {currentUser.role === "Supervisor" && currentTab === "supervisor-users" && (
+              {/* شاشة إدارة الحسابات المخصصة حصرياً للمدير (Admin) */}
+              {currentUser.role === "Admin" && currentTab === "supervisor-users" && (
                 <div className="p-6 flex-1 flex flex-col space-y-6">
-                  <div className="border-b border-slate-200 pb-4"><h2 className="text-lg font-bold">إدارة الحسابات والصلاحيات السحابية</h2></div>
+                  <div className="border-b border-slate-200 pb-4"><h2 className="text-lg font-bold">إدارة حسابات النظام والمستخدمين السحابية</h2></div>
                   <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 items-start">
                     
                     <div className="xl:col-span-5 bg-slate-50 p-5 rounded-2xl border space-y-4">
@@ -752,7 +793,8 @@ export default function App() {
                           <label className="text-xs font-bold">نوع الحساب والصلاحية</label>
                           <select className="w-full p-2.5 border rounded-xl text-xs" value={newEngineerForm.role} onChange={e=>setNewEngineerForm({...newEngineerForm, role:e.target.value})}>
                             <option value="Field_Engineer">مهندس ميداني (للمسح والحصر)</option>
-                            <option value="Supervisor">مشرف عام (لإدارة النظام والاعتماد)</option>
+                            <option value="Supervisor">مشرف تقارير (لإدارة واعتماد التقارير فقط)</option>
+                            <option value="Admin">مدير نظام (صلاحيات كاملة وحذف)</option>
                           </select>
                         </div>
                         <button type="submit" className="w-full bg-teal-600 text-white font-bold py-2.5 rounded-xl text-xs">تثبيت وحفظ الحساب</button>
@@ -778,8 +820,11 @@ export default function App() {
                               </div>
                             </div>
                             <div className="flex items-center space-x-2 space-x-reverse">
-                              <span className={`text-[9px] font-black px-2 py-0.5 rounded ${user.role === "Supervisor" ? "bg-purple-100 text-purple-700" : "bg-teal-100 text-teal-700"}`}>{user.role === "Supervisor" ? "مشرف" : "مهندس"}</span>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded ${user.role === "Admin" ? "bg-red-100 text-red-700" : user.role === "Supervisor" ? "bg-purple-100 text-purple-700" : "bg-teal-100 text-teal-700"}`}>
+                                {user.role === "Admin" ? "مدير نظام" : user.role === "Supervisor" ? "مشرف" : "مهندس"}
+                              </span>
                               <button onClick={()=>setEditingUser({id: user.id, name: user.name, username: user.username, newPassword: ""})} className="bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-[10px] border">تغيير السر</button>
+                              <button onClick={()=>handleDeleteUser(user.id, user.role)} className="bg-red-50 text-red-600 font-bold px-3 py-1.5 rounded-lg text-[10px] border border-red-200">حذف 🗑️</button>
                             </div>
                           </div>
                         ))}
@@ -788,8 +833,8 @@ export default function App() {
                       {editingUser && (
                         <form onSubmit={handleUpdatePassword} className="p-4 bg-amber-50 border border-amber-300 rounded-2xl flex flex-col md:flex-row gap-3 items-end">
                           <div className="flex-1 w-full space-y-1">
-                            <div className="flex justify-between items-center mb-1"><label className="text-[10px] font-bold">كلمة مرور لـ {editingUser.name}</label><button type="button" onClick={()=>setEditingUser(null)} className="text-[10px] text-red-600 font-bold">إلغاء</button></div>
-                            <input type="text" placeholder="السر الجديد..." className="w-full p-2 border rounded-xl text-xs" value={editingUser.newPassword} onChange={e=>setEditingUser({...editingUser, newPassword:e.target.value})} required/>
+                            <div className="flex justify-between items-center mb-1"><label className="text-[10px] font-bold">تغيير السر لـ {editingUser.name}</label><button type="button" onClick={()=>setEditingUser(null)} className="text-[10px] text-red-600 font-bold">إلغاء</button></div>
+                            <input type="text" placeholder="السر الجديد..." className="w-full p-2 border rounded-xl text-xs text-left" value={editingUser.newPassword} onChange={e=>setEditingUser({...editingUser, newPassword:e.target.value})} required/>
                           </div>
                           <button type="submit" className="bg-amber-600 text-white font-bold px-4 py-2 rounded-xl text-xs">تحديث</button>
                         </form>
