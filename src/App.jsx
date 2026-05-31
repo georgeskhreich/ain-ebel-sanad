@@ -10,7 +10,6 @@ import {
   getFirestore, 
   collection, 
   doc, 
-  setDoc, 
   addDoc, 
   updateDoc, 
   deleteDoc, /* تم إضافة دالة الحذف */
