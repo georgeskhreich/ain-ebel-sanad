@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInWithCustomToken, 
   signInAnonymously, 
   onAuthStateChanged 
 } from 'firebase/auth';
